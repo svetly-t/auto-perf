@@ -24,7 +24,7 @@ def start_perf(state: State, data: str):
         print("START", data, "called, but there is a running perf-record instance")
         return
     state.data = state.data_dir + data
-    cmd = ["perf", "record", "-p", f"{state.pid}", "-o", state.data]
+    cmd = ["perf", "record", "-p", f"{state.pid}", "-o", state.data, "-F", "125"]
     state.pperf = subprocess.Popen(args=cmd)
     print("Starting", " ".join(cmd))
 
@@ -33,7 +33,8 @@ def stop_perf(state: State):
         print("STOP called but no running perf-record instance")
         return
     SIGINT = 2
-    state.pperf.send_signal(SIGINT)
+    SIGKILL = 9
+    state.pperf.send_signal(SIGKILL)
     state.pperf.wait()
     state.pperf = None
     print("perf-record has completed; see output in", state.data)
