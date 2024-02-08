@@ -12,6 +12,9 @@ class State:
         self.data_dir = ""
         self.start_time = time.time()
         self.end_time = self.start_time
+        self.event = ""
+        self.frequency = 0
+        self.stop_script = ""
 
 def pidof(name: str) -> int:
     return int(
@@ -23,19 +26,41 @@ def pidof(name: str) -> int:
                 ).stdout
             )
 
+def event_is_precise(event: str) -> bool:
+    if len(event) == 0:
+        return False
+    if event[-1] == "p":
+        return True
+    return False
+
 def start_perf(state: State, data: str):
     if (state.pperf is not None):
         print("START", data, "called, but there is a running perf-record instance")
         return
-    state.data = state.data_dir + data
-    cmd = ["sudo", "perf", "record", "-p", f"{state.pid}", "-o", state.data, "-F", "100" ]
+    state.data = data
+    path = state.data_dir + state.data
+    cmd = ["sudo", "perf", "record", "-e", f"{state.event}", "-p", f"{state.pid}", "-o", path, "-F", f"{state.frequency}"]
+    # -d flag collects ADDR in the sample output
+    if event_is_precise(state.event):
+        cmd.extend(["-d"])
     state.pperf = subprocess.Popen(args=cmd)
     state.start_time = time.time()
     print("Starting", " ".join(cmd))
 
-def stop_perf(state: State):
+def format_stop_script(state: State, argument: str) -> str:
+    formatted = state.stop_script
+    formatted = formatted.replace("$START_ARGS", state.data)
+    formatted = formatted.replace("$STOP_ARGS", argument)
+    formatted = formatted.replace("$OUTPUT_DIR", state.data_dir)
+    return formatted
+
+def stop_script(command: str):
+    print(f"running stop-script {command}:")
+    subprocess.run(f"{command}", shell=True, capture_output=True)
+
+def stop_perf(state: State, data: str):
     if (state.pperf is None):
-        print("STOP called but no running perf-record instance")
+        print("STOP", data, "called but no running perf-record instance")
         return
     SIGINT = 2
     SIGKILL = 9
@@ -47,27 +72,39 @@ def stop_perf(state: State):
     state.pperf.wait()
     state.pperf = None
     state.end_time = time.time()
+    # run stop script
+    if state.stop_script != "":
+        stop_script_formatted = format_stop_script(state, data)
+        stop_script(stop_script_formatted)
     # get runtime in seconds
     seconds = state.end_time - state.start_time
     # convert to integer
     seconds = int(seconds)
     # store the runtime in the file name
-    newdata = state.data + "_" + str(seconds)
-    os.rename(state.data, newdata)
-    state.data = newdata
-    print(f"perf-record completed in {str(seconds)}s; see output in", state.data)
+    newpath = state.data_dir + state.data + "_" + str(seconds)
+    os.rename(state.data_dir + state.data, newpath)
+    print(f"perf-record completed in {seconds}s; see output in", newpath)
 
 def parse_cmd(cmd: str):
     return cmd.split() 
 
 def handle_cmd(state: State, args):
-    if len(args) == 1:
-        if args[0] == "STOP":
-            stop_perf(state)
-    elif len(args) == 2:
-        if args[0] == "START":
-            state.pid = pidof(state.proc_name)
-            start_perf(state, args[1])
+    if len(args) < 1:
+        print("invalid empty command")
+    # get command and arguments from the array
+    command = args[0]
+    data = ""
+    if len(args) > 1:
+        data = " ".join(args[1:])
+    # only valid commands are STOP and START
+    if command == "STOP":
+        stop_perf(state, data)
+    elif command == "START":
+        if data == "":
+            print("invalid START command:", " ".join(args))
+            return
+        state.pid = pidof(state.proc_name)
+        start_perf(state, data)
     else:
         print("invalid command", " ".join(args))
 
@@ -98,6 +135,9 @@ def args_to_state(state: State, args):
     state.data_dir = args.data_directory
     if state.data_dir[-1] != '/':
         state.data_dir += '/'
+    state.event = args.event
+    state.frequency = args.frequency
+    state.stop_script = args.stop_script
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(
@@ -105,6 +145,9 @@ if __name__ == "__main__":
                  description='Trigger perf-record remotely via HTTP calls.')
     parser.add_argument('process_name')
     parser.add_argument('data_directory')
+    parser.add_argument('--event', '-e', nargs='?', default='cycles')
+    parser.add_argument('--frequency', '-F', nargs='?', type=int, default=100)
+    parser.add_argument('--stop_script', '-s', nargs='?', default="")
     args = parser.parse_args()
     state = State()
     args_to_state(state, args)
