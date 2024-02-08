@@ -1,6 +1,8 @@
 import socket
 import subprocess
 import argparse
+import os
+import time
 
 class State:
     def __init__(self):
@@ -8,6 +10,8 @@ class State:
         self.pid = 0
         self.proc_name = ""
         self.data_dir = ""
+        self.start_time = time.time()
+        self.end_time = self.start_time
 
 def pidof(name: str) -> int:
     return int(
@@ -26,6 +30,7 @@ def start_perf(state: State, data: str):
     state.data = state.data_dir + data
     cmd = ["sudo", "perf", "record", "-p", f"{state.pid}", "-o", state.data, "-F", "100" ]
     state.pperf = subprocess.Popen(args=cmd)
+    state.start_time = time.time()
     print("Starting", " ".join(cmd))
 
 def stop_perf(state: State):
@@ -41,7 +46,16 @@ def stop_perf(state: State):
     print("sent SIGINT to perf")
     state.pperf.wait()
     state.pperf = None
-    print("perf-record has completed; see output in", state.data)
+    state.end_time = time.time()
+    # get runtime in seconds
+    seconds = state.end_time - state.start_time
+    # convert to integer
+    seconds = int(seconds)
+    # store the runtime in the file name
+    newdata = state.data + "_" + str(seconds)
+    os.rename(state.data, newdata)
+    state.data = newdata
+    print(f"perf-record completed in {str(seconds)}s; see output in", state.data)
 
 def parse_cmd(cmd: str):
     return cmd.split() 
