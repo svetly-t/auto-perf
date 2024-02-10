@@ -1,8 +1,8 @@
 #!/bin/bash
 
 # Check if exactly three arguments are provided
-if [ "$#" -ne 3 ]; then
-    echo "Usage: $0 <Process Name> <Directory> <Filename>"
+if [ "$#" -ne 4 ]; then
+    echo "Usage: $0 <Process Name> <Directory> <Filename> <Map file>"
     exit 1
 fi
 
@@ -10,6 +10,7 @@ fi
 PID=$(pidof -s $1)
 DIR=$2
 FILENAME=$3
+FILETYPE=$4
 
 # Check if we have a PID with the given name
 if [ ! -n "$PID" ]; then
@@ -24,10 +25,10 @@ if [ ! -d "$DIR" ]; then
 fi
 
 # Construct the full file path
-FULL_PATH="$DIR/$FILENAME.smaps"
+FULL_PATH="$DIR/$FILENAME.$FILETYPE"
 
 # Use cat to read /proc/$PID/smaps and redirect the output to the specified file
-cat "/proc/$PID/smaps" > "$FULL_PATH"
+cat "/proc/$PID/$FILETYPE" > "$FULL_PATH"
 
 echo "Memory mapping for PID $PID saved to $FULL_PATH"
 
